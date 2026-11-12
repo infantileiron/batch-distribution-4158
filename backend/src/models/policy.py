@@ -10,4 +10,6 @@ class KernelPolicy(Base):
  sigma:Mapped[float|None]=mapped_column(Double,nullable=True)
  permutations:Mapped[int]=mapped_column(Integer)
  seed:Mapped[int]=mapped_column(Integer)
+ # pooled=跨缸打乱（历史默认）；by_vat=按缸分层、仅缸内交换批次归属
+ stratification:Mapped[str]=mapped_column(String,default='pooled',server_default='pooled')
  created_at:Mapped[str]=mapped_column(String)

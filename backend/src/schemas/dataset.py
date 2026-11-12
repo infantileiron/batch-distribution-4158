@@ -2,6 +2,8 @@ from pydantic import BaseModel,Field,ConfigDict
 class ColorInput(BaseModel):
  model_config=ConfigDict(extra='forbid',allow_inf_nan=False)
  sample_id:str=Field(min_length=1,max_length=31)
+ # 缸号可选：pooled历史口径不需要；选择by_vat分层口径时研究冻结前强制校验
+ vat_id:str|None=Field(default=None,max_length=31)
  l:float
  a:float
  b:float

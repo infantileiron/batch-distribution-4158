@@ -8,6 +8,7 @@ class PolicyInput(BaseModel):
  sigma:float|None=Field(default=None,gt=0)
  permutations:int=Field(ge=19,le=999,strict=True)
  seed:int=Field(ge=0,le=2147483647,strict=True)
+ stratification:Literal['pooled','by_vat']=Field(default='pooled')
  @model_validator(mode='after')
  def fixed_width(self):
   if self.bandwidth=='fixed' and self.sigma is None:raise ValueError('固定核宽须明确正sigma')

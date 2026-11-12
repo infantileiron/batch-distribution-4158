@@ -15,7 +15,8 @@ def create(db,payload,user):
 def export(db,id):
  report=db.get(Report,id)
  if not report:raise HTTPException(404,'归档不存在')
- result=require_completed(db,report.run_id).result;review=db.get(ShiftReview,report.review_id);buf=io.StringIO();writer=csv.DictWriter(buf,['run_id','checksum','review_version','method','statistic','B','seed','extreme_count','denominator','pvalue_unadjusted','scaling','bandwidth','sigma','n_a','n_b']);writer.writeheader()
+ result=require_completed(db,report.run_id).result;review=db.get(ShiftReview,report.review_id);buf=io.StringIO();writer=csv.DictWriter(buf,['run_id','checksum','review_version','method','statistic','B','seed','extreme_count','denominator','pvalue_unadjusted','scaling','bandwidth','sigma','n_a','n_b','stratification','permutation_method','feasible_groups','sampling_basis']);writer.writeheader()
+ info=result.get('stratification')
  for method in ('energy','mmd'):
-  r=result[method];tr=result['transform'];writer.writerow({'run_id':report.run_id,'checksum':result['checksum'],'review_version':review.version,'method':method,'statistic':r['statistic'],'B':result['B'],'seed':result['seed'],'extreme_count':r['extreme_count'],'denominator':r['denominator'],'pvalue_unadjusted':r['pvalue'],'scaling':tr['scaling'],'bandwidth':tr['bandwidth'],'sigma':tr['sigma'],'n_a':result['sample_sizes'][0],'n_b':result['sample_sizes'][1]})
+  r=result[method];tr=result['transform'];writer.writerow({'run_id':report.run_id,'checksum':result['checksum'],'review_version':review.version,'method':method,'statistic':r['statistic'],'B':result['B'],'seed':result['seed'],'extreme_count':r['extreme_count'],'denominator':r['denominator'],'pvalue_unadjusted':r['pvalue'],'scaling':tr['scaling'],'bandwidth':tr['bandwidth'],'sigma':tr['sigma'],'n_a':result['sample_sizes'][0],'n_b':result['sample_sizes'][1],'stratification':info['mode'] if info else 'pooled','permutation_method':info['method'] if info else 'monte_carlo','feasible_groups':info['feasible_groups'] if info else '', 'sampling_basis':info['sampling_basis'] if info else '跨缸打乱历史口径；固定seed随机排列，p=(1+extreme)/(B+1)'})
  return chr(0xfeff)+buf.getvalue()

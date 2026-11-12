@@ -1,3 +1,8 @@
 -- Initial schema source: src/models/*.py; metadata.create_all creates missing tables.
 -- Raw batches and label-independent policy frozen per study; immutable run/review/report IDs.
 -- sigma DOUBLE, permutation counts/seed INTEGER; calculations NumPy Float64.
+--
+-- 002 升级（由 src/config/migration.py 在 main/worker/seed 启动时幂等执行，无独立SQL回滚）：
+-- ALTER TABLE kernel_policies ADD COLUMN stratification VARCHAR NOT NULL DEFAULT 'pooled';
+-- 历史行回填 'pooled'，旧研究继续按跨缸打乱原口径复现；新可选值 'by_vat' 为按缸分层检验。
+-- 按缸分层仅缸内交换批次归属、保留各缸两批样本数；数据集新增可选 vat_id（by_vat 时强制）。

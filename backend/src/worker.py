@@ -3,9 +3,11 @@ import redis,traceback
 from sqlalchemy import select
 from src.config.settings import REDIS_URL
 from src.config.database import Session
+from src.config.migration import upgrade as upgrade_schema
 from src.models import DistributionRun,DistributionStudy
 from src.services.analysis import analyze
 client=redis.Redis.from_url(REDIS_URL);heartbeat=Path('/artifacts/worker-heartbeat')
+upgrade_schema()
 def execute(id):
  with Session() as db:
   run=db.get(DistributionRun,id)

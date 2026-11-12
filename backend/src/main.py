@@ -8,9 +8,11 @@ from src.config.database import engine
 from src.config.settings import SEED_DEMO,REDIS_URL
 from src.middlewares.errors import ErrorMiddleware
 from src.middlewares.audit import AuditMiddleware
+from src.config.migration import upgrade as upgrade_schema
 from src.routes import auth,datasets,policies,studies,runs,reviews,reports,audit
 @asynccontextmanager
 async def lifespan(app):
+ upgrade_schema()
  if SEED_DEMO:
   try:
    from scripts.seed_demo import seed

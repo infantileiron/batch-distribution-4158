@@ -2,6 +2,7 @@ import uuid
 from fastapi import HTTPException
 from sqlalchemy import select
 from src.models import ColorBatchDataset,KernelPolicy,DistributionStudy
+from src.services.validation import validate_vat_groups
 from src.utils.serialization import serialize
 from src.utils.time import now
 
@@ -9,4 +10,9 @@ def create(db,payload):
  dataset=db.get(ColorBatchDataset,payload.dataset_id);policy=db.get(KernelPolicy,payload.policy_id)
  if not dataset or not policy:raise HTTPException(404,'批次对照或检验口径不存在')
  if db.scalar(select(DistributionStudy).where(DistributionStudy.name==payload.name)):raise HTTPException(409,'分布研究名称已存在')
+ stratification=getattr(policy,'stratification','pooled') or 'pooled'
+ if stratification=='by_vat':
+  data=serialize(dataset)
+  try:validate_vat_groups(data['batch_a'],data['batch_b'])
+  except ValueError as e:raise HTTPException(422,str(e))
  item=DistributionStudy(id=str(uuid.uuid4()),snapshot={'dataset':serialize(dataset),'policy':serialize(policy)},created_at=now(),**payload.model_dump());db.add(item);db.commit();return serialize(item)

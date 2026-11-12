@@ -43,11 +43,21 @@ docker compose exec backend python -m scripts.seed_demo
 
 缩放有原始坐标none、合并总体SD pooled_std两种。后者只用全部样本估计一次均值/总体SD，不按标签分别估计；零SD维显式采用scale=1，中心化后为0，并记录维度。自动sigma是合并样本全部非对角欧氏距离的中位数，包含零距离；中位数0明确失败，要求改用固定正sigma，不跳过零值、不静默加epsilon。用户固定sigma同样在置换前锁定。置换期间不重估任何标签依赖参数。
 
-真实API每批4至120条完整有限读数，算法函数支持每批至少2点的手算。允许不同样本读数相同，样本ID跨两批唯一。两个检验的p**未做多重校正**，分别人工复核，不合并成自动迁移结论。p不是迁移概率；有限随机排列有分辨率与抽样变动。假设样本独立可交换；成对、时序或同缸相关读数可能不适用。原始三维欧氏坐标不是DeltaE00，缩放后的Energy单位也不同于原始读数口径。
+## 按缸分层（by_vat）
+
+同缸色样彼此相关，跨缸打乱会把缸间差异误判成批次迁移。口径新增 `stratification`：`pooled`（历史默认，全部样本跨缸打乱）与 `by_vat`（按缸分层，仅缸内交换批次归属）。by_vat 下每次排列在每个缸内部 shuffle，保持该缸 A/B 两批样本数不变，样本不跨缸移动；Energy V 与无偏 MMD U 共用同一批缸内排列。
+
+数据集每条读数新增可选 `vat_id`。选择 by_vat 口径冻结研究时强制校验：任一读数缺缸号、或某缸只有一批样本（缸内无法交换归属）、或缸数少于2，研究冻结接口直接 422 拒绝，任务不进队列；worker 内保留同一校验作为防线。pooled 历史口径不要求缸号，旧数据集与旧研究快照（无 `stratification` 字段）一律按原口径逐位复现。
+
+分层与抽样依据随运行结果冻结并在页面与 CSV 留痕：先逐缸计算可行分组数 `C(n_v, n_vA)`，乘积为总体可行分组数。可行分组不超过预算（`EXACT_ENUMERATION_BUDGET=1000`）时全枚举全部缸内归属分配给**精确p**：观测分配本身是枚举之一、计入分母，`p=极端次数/分组数`，不做+1校正；超过预算则按口径锁定的 seed 做蒙特卡洛缸内抽样 B 次，沿用 `p=(1+extreme)/(B+1)` 加一口径。结果记录 `method`（exact_enumeration/monte_carlo）、`feasible_groups`、`evaluated_groups`、冻结缸序、各缸样本数与可行分组数、`sampling_basis` 文字依据；CSV 追加 `stratification,permutation_method,feasible_groups,sampling_basis` 四列，旧列顺序不变。
+
+历史部署升级：`src/config/migration.py` 在 API、worker 与 seed 启动时幂等检查 `kernel_policies`，缺列则补 `stratification VARCHAR NOT NULL DEFAULT 'pooled'` 并回填 pooled；旧研究、旧运行、旧 CSV 仍按跨缸打乱口径复现，分层只对新口径/新研究生效。
+
+真实API每批4至120条完整有限读数，算法函数支持每批至少2点的手算。允许不同样本读数相同，样本ID跨两批唯一。两个检验的p**未做多重校正**，分别人工复核，不合并成自动迁移结论。p不是迁移概率；有限随机排列有分辨率与抽样变动。pooled口径假设样本独立可交换；成对、时序或同缸相关读数可能不适用，此类数据应改用by_vat分层口径，其可交换前提为缸内批次标签条件可交换，缸级系统差异被分层隔离。原始三维欧氏坐标不是DeltaE00，缩放后的Energy单位也不同于原始读数口径。
 
 ## 实体与技术
 
-六实体 ColorBatchDataset、KernelPolicy、DistributionStudy、DistributionRun、ShiftReview、Report，贯穿表/model/schema/service/route、前端API/store/page。研究冻结原始批次及口径；运行保存原始读数、变换参数、统计、完整排列与分布；每次复核新增不可变版本。归档绑定最新接受复核ID，后续新复核不改变旧CSV。
+六实体 ColorBatchDataset、KernelPolicy、DistributionStudy、DistributionRun、ShiftReview、Report，贯穿表/model/schema/service/route、前端API/store/page。研究冻结原始批次及口径；运行保存原始读数、变换参数、统计、完整排列与分布；每次复核新增不可变版本。归档绑定最新接受复核ID，后续新复核不改变旧CSV。KernelPolicy 带 stratification（pooled/by_vat），ColorBatchDataset 读数带可选 vat_id；旧行由启动迁移补默认值。
 
 | 部分 | 技术 |
 |---|---|
@@ -58,15 +68,15 @@ docker compose exec backend python -m scripts.seed_demo
 | 数据库 | PostgreSQL16，sigma为DOUBLE，预算和seed为INTEGER |
 | Docker | 恰好frontend/backend/worker/db/redis，五服务均真实健康检查 |
 
-`frontend/src` 按api/stores/types/pages/components/common/hooks/router/utils/constants分工，六领域页加登录；散点、口径条、统计摘要跨页共享。`backend/src` 按models/schemas/services/controllers/routes/middlewares/config/utils/constants分工；`backend/scripts/seed_demo.py`仅插入缺少的自然键，`backend/migrations`说明初始schema。测试、截图、日志和验收报告单独存放批根 `test-artifacts/gb-2407`，不混入源码。配套package/lock仅JSON修改根包名，使用npm ci。
+`frontend/src` 按api/stores/types/pages/components/common/hooks/router/utils/constants分工，六领域页加登录；散点、口径条、统计摘要跨页共享。`backend/src` 按models/schemas/services/controllers/routes/middlewares/config/utils/constants分工；`backend/scripts/seed_demo.py`仅插入缺少的自然键，`backend/migrations`说明初始schema。测试、截图、日志和验收报告单独存放批根 `test-artifacts/gb-2407`（历史口径基线）与 `test-artifacts/stratified-vat`（按缸分层验收：算法42项断言、旧库升级回填、HTTP端到端），不混入源码。配套package/lock仅JSON修改根包名，使用npm ci。
 
 `.env.example`：COMPOSE_PROJECT_NAME=batch-distribution，FRONTEND_PORT=18236，BACKEND_PORT=19236，DB_PORT=17736，SEED_DEMO=true，JWT_SECRET；DATABASE_URL/REDIS_URL在compose注入。三个命名卷分别保存数据库、Redis和worker产物；Nginx `/api/`代理并SPA回落，健康检查用127.0.0.1，数值线程限制1。开发时前端 `npm ci && npm run dev`，API `uvicorn src.main:app --host 0.0.0.0`，worker `python -m src.worker`，配置可连接的数据库和Redis地址。
 
-共享枚举role、scaling、bandwidth、run_status、review_decision在 `backend/src/constants/enums.py` 与 `frontend/src/constants/enums.ts`；schema Literal、状态服务和页面保持一致。
+共享枚举role、scaling、bandwidth、stratification、run_status、review_decision在 `backend/src/constants/enums.py` 与 `frontend/src/constants/enums.ts`；schema Literal、状态服务和页面保持一致。
 
 ## 边界与清理
 
-最多每批120条、API最多999次随机排列，不进行全枚举或多重校正。读数仅JSON表单导入；新口径需新研究，不覆盖已冻结统计。边际图共享每维合并范围分箱，只是观察视图，多元检验使用全部三维。单worker无生产级分布式租约，初始SQLAlchemy建表不含生产迁移回滚，无多租户隔离。模拟均值/方差/多峰不代表真实颜色质量或工艺变化原因。
+最多每批120条、API最多999次随机排列，不进行多重校正。读数仅JSON表单导入；新口径需新研究，不覆盖已冻结统计。分层全枚举预算固定为1000个可行分组，超出即转固定seed蒙特卡洛；全枚举精确p不做+1、蒙特卡洛沿用+1，两种口径都在结果与CSV标明。边际图共享每维合并范围分箱，只是观察视图，多元检验使用全部三维。单worker无生产级分布式租约，初始SQLAlchemy建表不含生产迁移回滚，无多租户隔离。模拟均值/方差/多峰不代表真实颜色质量或工艺变化原因。
 
 ```sh
 docker compose down -v --remove-orphans
